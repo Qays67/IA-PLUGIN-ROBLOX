@@ -1,0 +1,1049 @@
+--!nocheck
+--[[
+	XozHub AI — Plugin Roblox Studio
+	================================
+
+	INSTALLATION
+	------------
+	1. Crée un Script dans Roblox Studio (peu importe où) et colle ce code dedans.
+	2. Clic droit sur le script → « Save as Local Plugin ».
+	3. Le bouton « XozHub AI » apparaît dans la barre d'outils (onglet Plugins).
+
+	UTILISATION
+	-----------
+	1. Sur le site XozHub, clique sur « Générer le code ».
+	2. Recopie le code à 6 caractères dans le champ « Code d'appairage ».
+	3. Clique sur « Connecter ». Tu peux maintenant discuter avec l'IA.
+	   Les réponses contenant du code Lua affichent un bouton « Insérer ».
+]]
+
+local HttpService = game:GetService("HttpService")
+local Selection = game:GetService("Selection")
+local ChangeHistoryService = game:GetService("ChangeHistoryService")
+local ServerScriptService = game:GetService("ServerScriptService")
+local StarterGui = game:GetService("StarterGui")
+
+--================================================================== CONFIG ==
+
+local PLUGIN_TITLE = "XozHub AI"
+local DEFAULT_URL = "http://localhost:8787"
+local POLL_INTERVAL = 1.5
+local MESSAGE_PREFIX = "Msg_"
+
+local C = {
+	bg         = Color3.fromRGB(13, 15, 26),
+	topbar     = Color3.fromRGB(18, 21, 36),
+	panel      = Color3.fromRGB(22, 25, 42),
+	field      = Color3.fromRGB(10, 12, 21),
+	line       = Color3.fromRGB(46, 54, 90),
+	text       = Color3.fromRGB(233, 237, 255),
+	dim        = Color3.fromRGB(152, 161, 200),
+	faint      = Color3.fromRGB(104, 111, 145),
+	accent     = Color3.fromRGB(91, 124, 255),
+	accent2    = Color3.fromRGB(164, 91, 255),
+	ok         = Color3.fromRGB(53, 224, 138),
+	warn       = Color3.fromRGB(255, 182, 72),
+	err        = Color3.fromRGB(255, 107, 122),
+	codeBg     = Color3.fromRGB(8, 9, 16),
+	bubbleAi   = Color3.fromRGB(30, 34, 56),
+	bubbleUser = Color3.fromRGB(44, 62, 142),
+}
+
+--=================================================================== ÉTAT ===
+
+local state = {
+	url = DEFAULT_URL,
+	code = "",
+	connected = false,
+	polling = false,
+	pollingRequest = false,
+	lastIndex = 0,
+	sending = false,
+	renderOrder = 0,
+}
+
+local ui = {}
+
+--=============================================================== UTILITIES ==
+
+local function new(className, props, parent)
+	local inst = Instance.new(className)
+	for key, value in pairs(props) do
+		inst[key] = value
+	end
+	if parent then
+		inst.Parent = parent
+	end
+	return inst
+end
+
+local function corner(parent, radius)
+	local c = Instance.new("UICorner")
+	c.CornerRadius = UDim.new(0, radius or 10)
+	c.Parent = parent
+	return c
+end
+
+local function padding(parent, top, right, bottom, left)
+	local p = Instance.new("UIPadding")
+	p.PaddingTop = UDim.new(0, top)
+	p.PaddingRight = UDim.new(0, right)
+	p.PaddingBottom = UDim.new(0, bottom)
+	p.PaddingLeft = UDim.new(0, left)
+	p.Parent = parent
+	return p
+end
+
+local function stroke(parent, color, thickness, transparency)
+	local s = Instance.new("UIStroke")
+	s.Color = color or C.line
+	s.Thickness = thickness or 1
+	s.Transparency = transparency or 0
+	s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	s.Parent = parent
+	return s
+end
+
+local function label(parent, props)
+	local base = {
+		BackgroundTransparency = 1,
+		Font = Enum.Font.Gotham,
+		TextSize = 13,
+		TextColor3 = C.text,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextYAlignment = Enum.TextYAlignment.Top,
+		RichText = false,
+	}
+	for key, value in pairs(props or {}) do
+		base[key] = value
+	end
+	return new("TextLabel", base, parent)
+end
+
+local function trim(text)
+	return (string.gsub(text or "", "^%s*(.-)%s*$", "%1"))
+end
+
+--=========================================================== PERSISTANCE ====
+
+local function loadSettings()
+	local ok, url = pcall(function()
+		return plugin:GetSetting("XozHub_Url")
+	end)
+	if ok and type(url) == "string" and #url > 0 then
+		state.url = url
+	end
+
+	local ok2, code = pcall(function()
+		return plugin:GetSetting("XozHub_Code")
+	end)
+	if ok2 and type(code) == "string" then
+		state.code = code
+	end
+end
+
+local function saveSettings()
+	pcall(function()
+		plugin:SetSetting("XozHub_Url", state.url)
+		plugin:SetSetting("XozHub_Code", state.code)
+	end)
+end
+
+--=================================================================== HTTP ====
+
+local function api(method, path, body)
+	local options = {
+		Url = state.url .. path,
+		Method = method,
+		Headers = { ["Content-Type"] = "application/json" },
+	}
+	if body ~= nil then
+		options.Body = HttpService:JSONEncode(body)
+	end
+
+	local ok, response = pcall(function()
+		return HttpService:RequestAsync(options)
+	end)
+
+	if not ok then
+		return false, "Serveur injoignable (" .. tostring(response) .. ")"
+	end
+
+	if not response.Success then
+		local message = "HTTP " .. tostring(response.StatusCode)
+		local decodedOk, decoded = pcall(function()
+			return HttpService:JSONDecode(response.Body)
+		end)
+		if decodedOk and decoded and decoded.error then
+			message = decoded.error
+		end
+		return false, message
+	end
+
+	local decodedOk, decoded = pcall(function()
+		return HttpService:JSONDecode(response.Body)
+	end)
+	if not decodedOk then
+		return false, "Réponse illisible du serveur"
+	end
+
+	return true, decoded
+end
+
+--=========================================================== CODE EXTRACTION =
+
+local function splitSegments(text)
+	local segments = {}
+	local pattern = "```([%w%+%-]*)%s*\n?(.-)```"
+	local last = 1
+
+	while true do
+		local startIndex, endIndex, lang, code = string.find(text, pattern, last)
+		if not startIndex then
+			break
+		end
+		if startIndex > last then
+			table.insert(segments, { kind = "text", value = string.sub(text, last, startIndex - 1) })
+		end
+		table.insert(segments, { kind = "code", lang = trim(lang), value = trim(code) })
+		last = endIndex + 1
+	end
+
+	if last <= #text then
+		local tail = string.sub(text, last)
+		if trim(tail) ~= "" then
+			table.insert(segments, { kind = "text", value = tail })
+		end
+	end
+
+	if #segments == 0 then
+		table.insert(segments, { kind = "text", value = text })
+	end
+
+	return segments
+end
+
+local function guessClassName(code)
+	if string.find(code, "LocalPlayer") or string.find(code, "LocalScript")
+		or string.find(code, "UserInputService") or string.find(code, "ContextActionService")
+		or string.find(code, "Camera") then
+		return "LocalScript", StarterGui
+	end
+	if string.find(code, "^%s*return%s") then
+		return "ModuleScript", ServerScriptService
+	end
+	return "Script", ServerScriptService
+end
+
+local function guessName(code)
+	local firstLine = string.match(code, "^%-%-%s*(.-)%s*\n") or string.match(code, "^%-%-%s*(.-)$")
+	if firstLine then
+		local cleaned = string.gsub(firstLine, "[^%w%s_%-]", "")
+		cleaned = trim(cleaned)
+		if #cleaned >= 3 and #cleaned <= 40 then
+			cleaned = string.gsub(cleaned, "%s+", "")
+			return cleaned
+		end
+	end
+	return nil
+end
+
+local function insertCode(code)
+	local className, defaultParent = guessClassName(code)
+	local parent = defaultParent
+
+	local selected = Selection:Get()
+	if #selected > 0 then
+		local target = selected[1]
+		if target:IsA("LuaSourceContainer") then
+			parent = target.Parent or parent
+		elseif target:IsA("BasePart") or target:IsA("Model") or target:IsA("Folder")
+			or target:IsA("GuiObject") or target:IsA("ScreenGui") or target:IsA("LayerCollector") then
+			parent = target
+		end
+	end
+
+	local scriptInstance = Instance.new(className)
+	local name = guessName(code)
+	scriptInstance.Name = name or ("XozHub_" .. tostring(os.time()))
+	scriptInstance.Source = code
+	scriptInstance.Parent = parent
+
+	ChangeHistoryService:SetWaypoint("XozHub AI : insertion de script")
+	Selection:Set({ scriptInstance })
+	pcall(function()
+		plugin:OpenScript(scriptInstance)
+	end)
+
+	return scriptInstance, className
+end
+
+--================================================================== INTERFACE
+
+local function makeChip(parent, text, color)
+	local chip = new("Frame", {
+		BackgroundColor3 = color,
+		BackgroundTransparency = 0.85,
+		Size = UDim2.new(0, 100, 0, 22),
+		Position = UDim2.new(1, -112, 0, 15),
+		BorderSizePixel = 0,
+	}, parent)
+	corner(chip, 11)
+	stroke(chip, color, 1, 0.55)
+
+	local dot = new("Frame", {
+		BackgroundColor3 = color,
+		Size = UDim2.new(0, 6, 0, 6),
+		Position = UDim2.new(0, 10, 0.5, -3),
+		BorderSizePixel = 0,
+	}, chip)
+	corner(dot, 3)
+
+	local textLabel = label(chip, {
+		Name = "ChipText",
+		Text = text,
+		TextSize = 11,
+		Font = Enum.Font.GothamMedium,
+		TextColor3 = color,
+		TextXAlignment = Enum.TextXAlignment.Center,
+		TextYAlignment = Enum.TextYAlignment.Center,
+		Size = UDim2.new(1, -18, 1, 0),
+		Position = UDim2.new(0, 12, 0, 0),
+	})
+
+	return chip, textLabel, dot
+end
+
+local function makeCodeBlock(parent, code, order)
+	local block = new("Frame", {
+		Name = "CodeBlock",
+		BackgroundColor3 = C.codeBg,
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BorderSizePixel = 0,
+		LayoutOrder = order,
+	}, parent)
+	corner(block, 9)
+	stroke(block, C.line, 1, 0.35)
+
+	local bar = new("Frame", {
+		Name = "Bar",
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 28),
+		BorderSizePixel = 0,
+	}, block)
+
+	label(bar, {
+		Text = "lua",
+		TextSize = 10,
+		Font = Enum.Font.Code,
+		TextColor3 = C.faint,
+		TextYAlignment = Enum.TextYAlignment.Center,
+		Size = UDim2.new(0, 60, 1, 0),
+		Position = UDim2.new(0, 12, 0, 0),
+	})
+
+	local insertBtn = new("TextButton", {
+		Name = "InsertButton",
+		Text = "Insérer",
+		Font = Enum.Font.GothamBold,
+		TextSize = 11,
+		TextColor3 = Color3.fromRGB(255, 255, 255),
+		BackgroundColor3 = C.accent,
+		Size = UDim2.new(0, 74, 0, 22),
+		Position = UDim2.new(1, -12, 0.5, -11),
+		BorderSizePixel = 0,
+		AutoButtonColor = true,
+	}, bar)
+	corner(insertBtn, 7)
+
+	local copyBtn = new("TextButton", {
+		Name = "CopyButton",
+		Text = "Copier",
+		Font = Enum.Font.Gotham,
+		TextSize = 11,
+		TextColor3 = C.dim,
+		BackgroundColor3 = C.panel,
+		Size = UDim2.new(0, 62, 0, 22),
+		Position = UDim2.new(1, -92, 0.5, -11),
+		BorderSizePixel = 0,
+		AutoButtonColor = true,
+	}, bar)
+	corner(copyBtn, 7)
+
+	local separator = new("Frame", {
+		BackgroundColor3 = C.line,
+		BackgroundTransparency = 0.4,
+		Size = UDim2.new(1, 0, 0, 1),
+		Position = UDim2.new(0, 0, 0, 28),
+		BorderSizePixel = 0,
+	}, block)
+
+	local textBox = new("TextBox", {
+		Name = "Source",
+		Text = code,
+		TextEditable = false,
+		ClearTextOnFocus = false,
+		MultiLine = true,
+		TextWrapped = false,
+		Font = Enum.Font.Code,
+		TextSize = 12,
+		TextColor3 = Color3.fromRGB(200, 211, 255),
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextYAlignment = Enum.TextYAlignment.Top,
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, -20, 0, 0),
+		Position = UDim2.new(0, 10, 0, 36),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BorderSizePixel = 0,
+		TextTruncate = Enum.TextTruncate.None,
+	}, block)
+	_ = textBox
+
+	new("UIPadding", {
+		PaddingBottom = UDim.new(0, 12),
+	}, block)
+
+	insertBtn.MouseButton1Click:Connect(function()
+		local inserted, className = insertCode(code)
+		insertBtn.Text = "Inséré ✓"
+		insertBtn.BackgroundColor3 = C.ok
+		insertBtn.TextColor3 = Color3.fromRGB(6, 20, 12)
+		task.delay(2, function()
+			if insertBtn.Parent then
+				insertBtn.Text = "Insérer"
+				insertBtn.BackgroundColor3 = C.accent
+				insertBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+			end
+		end)
+		print(string.format("[%s] %s « %s » inséré dans %s", PLUGIN_TITLE, className, inserted.Name,
+			inserted.Parent and inserted.Parent:GetFullName() or "?"))
+	end)
+
+	copyBtn.MouseButton1Click:Connect(function()
+		if setclipboard then
+			setclipboard(code)
+		end
+		copyBtn.Text = "Copié ✓"
+		copyBtn.TextColor3 = C.ok
+		task.delay(1.6, function()
+			if copyBtn.Parent then
+				copyBtn.Text = "Copier"
+				copyBtn.TextColor3 = C.dim
+			end
+		end)
+	end)
+
+	return block
+end
+
+local function addMessage(role, content)
+	if not ui.chatScroll then
+		return
+	end
+
+	state.renderOrder += 1
+	local order = state.renderOrder
+
+	local row = new("Frame", {
+		Name = MESSAGE_PREFIX .. role,
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BorderSizePixel = 0,
+		LayoutOrder = order,
+	}, ui.chatScroll)
+
+	if role == "system" then
+		local lbl = label(row, {
+			Text = content,
+			TextSize = 11,
+			Font = Enum.Font.GothamMedium,
+			TextColor3 = C.ok,
+			TextXAlignment = Enum.TextXAlignment.Center,
+			TextWrapped = true,
+			Size = UDim2.new(1, -8, 0, 0),
+			Position = UDim2.new(0, 4, 0, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
+		})
+		_ = lbl
+		return row
+	end
+
+	local isUser = (role == "user")
+
+	local nameLabel = label(row, {
+		Text = isUser and "Vous" or "XozHub AI",
+		TextSize = 10,
+		Font = Enum.Font.GothamBold,
+		TextColor3 = isUser and C.dim or C.accent,
+		TextXAlignment = isUser and Enum.TextXAlignment.Right or Enum.TextXAlignment.Left,
+		Size = UDim2.new(1, -6, 0, 13),
+		Position = UDim2.new(0, 3, 0, 0),
+	})
+	_ = nameLabel
+
+	local bubble = new("Frame", {
+		Name = "Bubble",
+		BackgroundColor3 = isUser and C.bubbleUser or C.bubbleAi,
+		Size = isUser and UDim2.new(0.86, 0, 0, 0) or UDim2.new(0.92, 0, 0, 0),
+		Position = isUser and UDim2.new(1, 0, 0, 16) or UDim2.new(0, 0, 0, 16),
+		AnchorPoint = isUser and Vector2.new(1, 0) or Vector2.new(0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BorderSizePixel = 0,
+	}, row)
+	corner(bubble, 11)
+	stroke(bubble, isUser and C.accent or C.line, 1, 0.6)
+
+	local list = new("UIListLayout", {
+		Padding = UDim.new(0, 7),
+		SortOrder = Enum.SortOrder.LayoutOrder,
+		FillDirection = Enum.FillDirection.Vertical,
+	}, bubble)
+
+	local pad = padding(bubble, 11, 12, 11, 12)
+	_ = pad
+	_ = list
+
+	local segmentOrder = 0
+	for _, segment in ipairs(splitSegments(content)) do
+		segmentOrder += 1
+		if segment.kind == "code" then
+			makeCodeBlock(bubble, segment.value, segmentOrder)
+		else
+			label(bubble, {
+				Text = segment.value,
+				TextSize = 12.5,
+				Font = Enum.Font.Gotham,
+				TextColor3 = isUser and Color3.fromRGB(240, 244, 255) or C.text,
+				TextWrapped = true,
+				Size = UDim2.new(1, 0, 0, 0),
+				AutomaticSize = Enum.AutomaticSize.Y,
+				TextYAlignment = Enum.TextYAlignment.Top,
+				LayoutOrder = segmentOrder,
+			})
+		end
+	end
+
+	return row
+end
+
+local function setStatus(text, color)
+	if not ui.statusChip then
+		return
+	end
+	ui.statusChip.BackgroundColor3 = color
+	ui.statusChip.BackgroundTransparency = 0.86
+	if ui.statusStroke then
+		ui.statusStroke.Color = color
+	end
+	if ui.statusDot then
+		ui.statusDot.BackgroundColor3 = color
+	end
+	if ui.statusText then
+		ui.statusText.Text = text
+		ui.statusText.TextColor3 = color
+	end
+end
+
+local function refreshStatus()
+	if state.connected then
+		setStatus("Connecté", C.ok)
+		if ui.connectBtn then
+			ui.connectBtn.Text = "Déconnecter"
+			ui.connectBtn.BackgroundColor3 = C.panel
+			ui.connectBtn.TextColor3 = C.text
+		end
+	elseif #state.code == 6 then
+		setStatus("En attente", C.warn)
+		if ui.connectBtn then
+			ui.connectBtn.Text = "Connecter"
+			ui.connectBtn.BackgroundColor3 = C.accent
+			ui.connectBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+		end
+	else
+		setStatus("Non connecté", C.faint)
+	end
+end
+
+--================================================================= POLLING ===
+
+-- Vide le fil de discussion sans toucher au UIListLayout / UIPadding.
+local function clearChat()
+	if not ui.chatScroll then
+		return
+	end
+	for _, child in ipairs(ui.chatScroll:GetChildren()) do
+		if child:IsA("GuiObject") and string.sub(child.Name, 1, #MESSAGE_PREFIX) == MESSAGE_PREFIX then
+			child:Destroy()
+		end
+	end
+	state.renderOrder = 0
+end
+
+local function pollNow()
+	-- une seule requête en vol : le serveur garde la connexion ouverte (long-poll)
+	if not state.connected or state.pollingRequest then
+		return
+	end
+	state.pollingRequest = true
+
+	task.spawn(function()
+		local ok, result = api("GET", string.format(
+			"/api/plugin/poll?code=%s&since=%d", state.code, state.lastIndex))
+
+		state.pollingRequest = false
+
+		if not ok or type(result) ~= "table" then
+			return
+		end
+
+		for _, message in ipairs(result.messages or {}) do
+			addMessage(message.role, message.content)
+			if type(message.index) == "number" then
+				state.lastIndex = math.max(state.lastIndex, message.index + 1)
+			end
+		end
+	end)
+end
+
+local function startPolling()
+	if state.polling then
+		return
+	end
+	state.polling = true
+
+	task.spawn(function()
+		while state.polling do
+			if state.connected then
+				pollNow()
+			end
+			task.wait(POLL_INTERVAL)
+		end
+	end)
+end
+
+--=================================================================== ACTIONS ==
+
+local function connect()
+	local code = string.upper(trim(ui.codeBox.Text))
+	code = string.gsub(code, "[^A-Z0-9]", "")
+
+	if #code ~= 6 then
+		setStatus("Code invalide", C.err)
+		task.delay(2.5, refreshStatus)
+		return
+	end
+
+	state.code = code
+	saveSettings()
+	ui.codeBox.Text = code
+	setStatus("Connexion…", C.warn)
+
+	task.spawn(function()
+		local ok, result = api("POST", "/api/plugin/connect", {
+			code = code,
+			name = "Roblox Studio",
+		})
+
+		if not ok then
+			setStatus("Échec connexion", C.err)
+			addMessage("system", "❌ " .. tostring(result))
+			task.delay(3, refreshStatus)
+			return
+		end
+
+		state.connected = true
+		state.lastIndex = 0
+		clearChat()
+		refreshStatus()
+		print(string.format("[%s] Connecté au serveur (%s)", PLUGIN_TITLE, state.url))
+		startPolling()
+		pollNow()
+	end)
+end
+
+local function disconnect()
+	state.connected = false
+	local code = state.code
+	task.spawn(function()
+		if #code == 6 then
+			api("POST", "/api/plugin/disconnect", { code = code })
+		end
+	end)
+	refreshStatus()
+	addMessage("system", "🔌 Déconnecté du site.")
+end
+
+local function sendMessage()
+	if state.sending then
+		return
+	end
+
+	local content = trim(ui.input.Text)
+	if content == "" then
+		return
+	end
+
+	if not state.connected then
+		addMessage("system", "⚠️ Connecte d'abord le plugin avec un code valide.")
+		return
+	end
+
+	ui.input.Text = ""
+	state.sending = true
+	ui.sendBtn.Text = "…"
+
+	task.spawn(function()
+		local ok, result = api("POST", "/api/plugin/message", {
+			code = state.code,
+			content = content,
+		})
+
+		state.sending = false
+		ui.sendBtn.Text = "Envoyer"
+
+		if not ok then
+			addMessage("system", "❌ " .. tostring(result))
+			return
+		end
+	end)
+end
+
+--=================================================================== INTERFACE
+
+local function buildInterface(widget)
+	local root = new("Frame", {
+		Name = "Root",
+		BackgroundColor3 = C.bg,
+		Size = UDim2.new(1, 0, 1, 0),
+		BorderSizePixel = 0,
+	}, widget)
+
+	-- ---------------------------------------------------------- barre haute --
+	local topbar = new("Frame", {
+		Name = "Topbar",
+		BackgroundColor3 = C.topbar,
+		Size = UDim2.new(1, 0, 0, 52),
+		BorderSizePixel = 0,
+	}, root)
+	new("Frame", {
+		BackgroundColor3 = C.line,
+		Size = UDim2.new(1, 0, 0, 1),
+		Position = UDim2.new(0, 0, 1, -1),
+		BorderSizePixel = 0,
+	}, topbar)
+
+	local logo = new("Frame", {
+		BackgroundColor3 = C.accent,
+		Size = UDim2.new(0, 30, 0, 30),
+		Position = UDim2.new(0, 12, 0, 11),
+		BorderSizePixel = 0,
+	}, topbar)
+	corner(logo, 9)
+	label(logo, {
+		Text = "X",
+		Font = Enum.Font.GothamBlack,
+		TextSize = 16,
+		TextColor3 = Color3.fromRGB(255, 255, 255),
+		Size = UDim2.new(1, 0, 1, 0),
+		TextXAlignment = Enum.TextXAlignment.Center,
+		TextYAlignment = Enum.TextYAlignment.Center,
+	})
+
+	label(topbar, {
+		Text = "XozHub AI",
+		Font = Enum.Font.GothamBold,
+		TextSize = 14,
+		Size = UDim2.new(0, 160, 0, 16),
+		Position = UDim2.new(0, 52, 0, 10),
+	})
+	label(topbar, {
+		Text = "Assistant Roblox Studio",
+		Font = Enum.Font.Gotham,
+		TextSize = 10.5,
+		TextColor3 = C.faint,
+		Size = UDim2.new(0, 200, 0, 14),
+		Position = UDim2.new(0, 52, 0, 27),
+	})
+
+	local chip, chipText, chipDot = makeChip(topbar, "Non connecté", C.faint)
+	ui.statusChip = chip
+	ui.statusText = chipText
+	ui.statusDot = chipDot
+	ui.statusStroke = chip:FindFirstChildOfClass("UIStroke")
+
+	-- ------------------------------------------------------------ réglages --
+	local config = new("Frame", {
+		Name = "Config",
+		BackgroundColor3 = C.panel,
+		Size = UDim2.new(1, 0, 0, 146),
+		Position = UDim2.new(0, 0, 0, 52),
+		BorderSizePixel = 0,
+	}, root)
+
+	label(config, {
+		Text = "ADRESSE DU SERVEUR",
+		TextSize = 9.5,
+		Font = Enum.Font.GothamBold,
+		TextColor3 = C.faint,
+		Size = UDim2.new(1, -24, 0, 13),
+		Position = UDim2.new(0, 12, 0, 10),
+	})
+
+	local urlBox = new("TextBox", {
+		Name = "UrlBox",
+		Text = state.url,
+		PlaceholderText = DEFAULT_URL,
+		ClearTextOnFocus = false,
+		Font = Enum.Font.Code,
+		TextSize = 12,
+		TextColor3 = C.text,
+		BackgroundColor3 = C.field,
+		Size = UDim2.new(1, -24, 0, 28),
+		Position = UDim2.new(0, 12, 0, 26),
+		BorderSizePixel = 0,
+		TextXAlignment = Enum.TextXAlignment.Left,
+	}, config)
+	corner(urlBox, 8)
+	stroke(urlBox, C.line, 1, 0.4)
+	padding(urlBox, 0, 10, 0, 10)
+	ui.urlBox = urlBox
+
+	urlBox.FocusLost:Connect(function()
+		local value = trim(urlBox.Text)
+		if value == "" then
+			value = DEFAULT_URL
+		end
+		value = string.gsub(value, "/+$", "")
+		state.url = value
+		urlBox.Text = value
+		saveSettings()
+	end)
+
+	label(config, {
+		Text = "CODE D'APPAIRAGE",
+		TextSize = 9.5,
+		Font = Enum.Font.GothamBold,
+		TextColor3 = C.faint,
+		Size = UDim2.new(1, -24, 0, 13),
+		Position = UDim2.new(0, 12, 0, 62),
+	})
+
+	local codeBox = new("TextBox", {
+		Name = "CodeBox",
+		Text = state.code,
+		PlaceholderText = "ABC123",
+		ClearTextOnFocus = false,
+		Font = Enum.Font.Code,
+		TextSize = 15,
+		TextColor3 = C.text,
+		BackgroundColor3 = C.field,
+		Size = UDim2.new(1, -122, 0, 32),
+		Position = UDim2.new(0, 12, 0, 78),
+		BorderSizePixel = 0,
+		TextXAlignment = Enum.TextXAlignment.Left,
+	}, config)
+	corner(codeBox, 8)
+	stroke(codeBox, C.line, 1, 0.4)
+	padding(codeBox, 0, 10, 0, 10)
+	ui.codeBox = codeBox
+
+	local connectBtn = new("TextButton", {
+		Name = "ConnectBtn",
+		Text = "Connecter",
+		Font = Enum.Font.GothamBold,
+		TextSize = 12,
+		TextColor3 = Color3.fromRGB(255, 255, 255),
+		BackgroundColor3 = C.accent,
+		Size = UDim2.new(0, 98, 0, 32),
+		Position = UDim2.new(1, -110, 0, 78),
+		BorderSizePixel = 0,
+		AutoButtonColor = false,
+	}, config)
+	corner(connectBtn, 8)
+	ui.connectBtn = connectBtn
+
+	connectBtn.MouseEnter:Connect(function()
+		if not state.connected then
+			connectBtn.BackgroundColor3 = Color3.fromRGB(110, 140, 255)
+		end
+	end)
+	connectBtn.MouseLeave:Connect(function()
+		if not state.connected then
+			connectBtn.BackgroundColor3 = C.accent
+		end
+	end)
+	connectBtn.MouseButton1Click:Connect(function()
+		if state.connected then
+			disconnect()
+		else
+			connect()
+		end
+	end)
+
+	codeBox.FocusLost:Connect(function(enterPressed)
+		if enterPressed then
+			connect()
+		end
+	end)
+
+	label(config, {
+		Text = "Le code s'affiche sur le site, dans la section « Connecter le plugin ».",
+		TextSize = 10.5,
+		Font = Enum.Font.Gotham,
+		TextColor3 = C.faint,
+		Size = UDim2.new(1, -24, 0, 14),
+		Position = UDim2.new(0, 12, 0, 118),
+	})
+
+	-- --------------------------------------------------------------- chat --
+	local chatScroll = new("ScrollingFrame", {
+		Name = "Chat",
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, -20, 1, -272),
+		Position = UDim2.new(0, 10, 0, 208),
+		BorderSizePixel = 0,
+		CanvasSize = UDim2.new(0, 0, 0, 0),
+		AutomaticCanvasSize = Enum.AutomaticSize.Y,
+		ScrollBarThickness = 5,
+		ScrollBarImageColor3 = C.line,
+		ScrollingDirection = Enum.ScrollingDirection.Y,
+	}, root)
+	new("UIListLayout", {
+		Padding = UDim.new(0, 12),
+		SortOrder = Enum.SortOrder.LayoutOrder,
+		FillDirection = Enum.FillDirection.Vertical,
+	}, chatScroll)
+	padding(chatScroll, 4, 6, 8, 4)
+	ui.chatScroll = chatScroll
+
+	-- -------------------------------------------------------------- saisie --
+	local inputBar = new("Frame", {
+		Name = "InputBar",
+		BackgroundColor3 = C.panel,
+		Size = UDim2.new(1, -20, 0, 50),
+		Position = UDim2.new(0, 10, 1, -60),
+		BorderSizePixel = 0,
+	}, root)
+	corner(inputBar, 12)
+	stroke(inputBar, C.line, 1, 0.4)
+
+	local input = new("TextBox", {
+		Name = "Input",
+		Text = "",
+		PlaceholderText = "Décris ton build, ton script, ta GUI…",
+		ClearTextOnFocus = false,
+		Font = Enum.Font.Gotham,
+		TextSize = 12.5,
+		TextColor3 = C.text,
+		PlaceholderColor3 = C.faint,
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, -108, 1, 0),
+		Position = UDim2.new(0, 12, 0, 0),
+		BorderSizePixel = 0,
+		TextXAlignment = Enum.TextXAlignment.Left,
+	}, inputBar)
+	ui.input = input
+
+	local sendBtn = new("TextButton", {
+		Name = "SendBtn",
+		Text = "Envoyer",
+		Font = Enum.Font.GothamBold,
+		TextSize = 12,
+		TextColor3 = Color3.fromRGB(255, 255, 255),
+		BackgroundColor3 = C.accent,
+		Size = UDim2.new(0, 82, 0, 32),
+		Position = UDim2.new(1, -94, 0.5, -16),
+		BorderSizePixel = 0,
+		AutoButtonColor = false,
+	}, inputBar)
+	corner(sendBtn, 9)
+	ui.sendBtn = sendBtn
+
+	sendBtn.MouseEnter:Connect(function()
+		sendBtn.BackgroundColor3 = Color3.fromRGB(110, 140, 255)
+	end)
+	sendBtn.MouseLeave:Connect(function()
+		sendBtn.BackgroundColor3 = C.accent
+	end)
+	sendBtn.MouseButton1Click:Connect(sendMessage)
+
+	input.FocusLost:Connect(function(enterPressed)
+		if enterPressed then
+			sendMessage()
+		end
+	end)
+
+	input.Focused:Connect(function()
+		stroke(inputBar, C.accent, 1, 0.2)
+	end)
+	input.FocusLost:Connect(function()
+		stroke(inputBar, C.line, 1, 0.4)
+	end)
+
+	return root
+end
+
+--====================================================================== BOOT ==
+
+loadSettings()
+
+local toolbar = plugin:CreateToolbar(PLUGIN_TITLE)
+local toggleButton = toolbar:CreateButton(
+	"XozHub AI",
+	"Ouvrir / fermer l'assistant IA XozHub",
+	"rbxassetid://6031075931"
+)
+toggleButton.ClickableWhenViewportHidden = true
+
+local widgetInfo = DockWidgetPluginGuiInfo.new(
+	Enum.InitialDockState.Float,
+	false,
+	false,
+	420,
+	560,
+	420,
+	560
+)
+
+local widget = plugin:CreateDockWidgetPluginGui("XozHubAI_Widget", widgetInfo)
+widget.Title = PLUGIN_TITLE
+widget.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+buildInterface(widget)
+ui.widget = widget
+
+addMessage("system", "👋 Bienvenue ! Récupère ton code sur le site puis clique sur Connecter.")
+
+widget:GetPropertyChangedSignal("Enabled"):Connect(function()
+	if widget.Enabled then
+		toggleButton:SetActive(true)
+	else
+		toggleButton:SetActive(false)
+	end
+end)
+
+toggleButton.Click:Connect(function()
+	widget.Enabled = not widget.Enabled
+	toggleButton:SetActive(widget.Enabled)
+	if widget.Enabled and state.connected then
+		startPolling()
+		pollNow()
+	end
+end)
+
+widget.Enabled = true
+toggleButton:SetActive(true)
+refreshStatus()
+
+-- reconnexion automatique si un code est déjà enregistré
+if #state.code == 6 then
+	ui.codeBox.Text = state.code
+	task.spawn(function()
+		task.wait(0.5)
+		connect()
+	end)
+end
+
+print(string.format("[%s] Plugin chargé. Serveur : %s", PLUGIN_TITLE, state.url))

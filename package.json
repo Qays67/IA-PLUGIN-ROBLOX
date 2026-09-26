@@ -1,0 +1,15 @@
+{
+  "name": "xozhub-ai-site",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Site + backend du plugin XozHub AI pour Roblox Studio",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "build:plugin": "node build-plugin.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

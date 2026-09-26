@@ -1,6 +1,6 @@
 @echo off
 title XozHub AI
-cd /d "%~dp0site"
+cd /d "%~dp0"
 echo.
 echo   XozHub AI - demarrage du serveur...
 echo   Le navigateur va s'ouvrir sur http://localhost:8787

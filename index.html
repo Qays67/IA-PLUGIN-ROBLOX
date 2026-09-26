@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="theme-color" content="#07080f" />
+<title>XozHub AI — l'IA qui construit ton jeu Roblox</title>
+<meta name="description" content="Plugin Roblox Studio + site d'appairage. Décris ton idée, l'IA génère builds, scripts, GUI et animations prêts à insérer." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%235b7cff'/><text x='16' y='23' font-size='20' font-weight='bold' text-anchor='middle' fill='white' font-family='Arial'>X</text></svg>" />
+</head>
+<body data-page="home">
+
+<!-- ============ avertissement : page ouverte depuis le disque ======== -->
+<div class="filebar" id="filebar" hidden>
+  <div class="wrap filebar-in">
+    <span class="filebar-ico">⚠️</span>
+    <div class="filebar-text">
+      <b>Tu as ouvert le fichier directement depuis le disque.</b>
+      <span>
+        Le design s'affiche, mais l'IA a besoin du serveur.
+        Double-clique sur <code>start.bat</code> (Windows) ou lance <code>npm start</code>
+        dans le dossier <code>site</code>, puis ouvre
+        <a href="http://localhost:8787">http://localhost:8787</a>.
+      </span>
+    </div>
+  </div>
+</div>
+
+<!-- ============================== décor ============================== -->
+<div class="bg" aria-hidden="true">
+  <div class="bg-glow g1"></div>
+  <div class="bg-glow g2"></div>
+  <div class="bg-glow g3"></div>
+  <div class="bg-grid"></div>
+  <div class="bg-noise"></div>
+</div>
+
+<!-- ============================== topbar ============================= -->
+<header class="topbar">
+  <div class="wrap topbar-in">
+    <a href="#" class="brand">
+      <span class="brand-mark">X</span>
+      <span class="brand-name">XozHub<em>AI</em></span>
+    </a>
+
+    <nav class="nav">
+      <a href="#features">Fonctions</a>
+      <a href="#install">Installation</a>
+      <a href="#connect">Connexion</a>
+      <a href="#chat">Chat</a>
+    </nav>
+
+    <div class="topbar-right">
+      <span class="chip" id="chip-server"><i></i><span>Connexion…</span></span>
+      <a class="btn btn-primary btn-sm" href="#connect">Connecter</a>
+    </div>
+  </div>
+</header>
+
+<main>
+
+<!-- =============================== hero ============================== -->
+<section class="hero">
+  <div class="wrap">
+    <span class="eyebrow">
+      <span class="eyebrow-dot"></span>
+      Plugin Roblox Studio · appairage par code à 6 caractères
+    </span>
+
+    <h1 class="hero-title">
+      Décris ton idée.<br />
+      L'IA <span class="grad">construit ton jeu</span>.
+    </h1>
+
+    <p class="hero-sub">
+      XozHub AI se branche à Roblox Studio dans un petit panneau discret.
+      Tu écris ce que tu veux, il génère des <b>builds</b>, des <b>scripts</b> Luau propres,
+      des <b>GUI</b> modernes et des <b>animations</b> — puis tu cliques sur « Insérer ».
+    </p>
+
+    <div class="hero-cta">
+      <a class="btn btn-primary btn-lg" href="/download/XozHubAI.rbxmx" data-download="rbxmx" download>
+        <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><path d="M12 3v12m0 0l-4.5-4.5M12 15l4.5-4.5M4 20h16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Télécharger le plugin
+      </a>
+      <a class="btn btn-ghost btn-lg" href="#connect">J'ai déjà le plugin</a>
+    </div>
+
+    <div class="hero-note">
+      <span>Gratuit</span><span class="sep">·</span>
+      <span>Tourne en local</span><span class="sep">·</span>
+      <span>Aucune donnée envoyée sans clé API</span>
+    </div>
+
+    <div class="hero-window reveal">
+      <div class="window-bar">
+        <span class="wd r"></span><span class="wd y"></span><span class="wd g"></span>
+        <span class="window-title">XozHubAI.plugin.lua</span>
+      </div>
+      <pre class="window-code"><code>-- Demande à XozHub AI :
+<span class="c">-- "construis un temple futuriste dans le Workspace"</span>
+
+<span class="k">local</span> model = Instance.<span class="f">new</span>(<span class="s">"Model"</span>)
+model.Name  = <span class="s">"TempleXozHub"</span>
+model.Parent = workspace
+
+<span class="k">for</span> x = -30, 30, 15 <span class="k">do</span>
+    <span class="f">makeColumn</span>(Vector3.<span class="f">new</span>(x, <span class="n">16</span>, 0))
+<span class="k">end</span>
+<span class="c">-- → 64 parts générées, prêtes à l'emploi</span></code></pre>
+    </div>
+  </div>
+</section>
+
+<!-- ============================= features ============================ -->
+<section id="features" class="section">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <span class="kicker">Ce que ça sait faire</span>
+      <h2>Un vrai dev senior dans ton panneau</h2>
+      <p>Pas un chatbot qui écrit trois lignes. Il produit du code complet, structuré et commenté.</p>
+    </div>
+
+    <div class="features">
+      <article class="fcard reveal">
+        <span class="ficon">🏗️</span>
+        <h3>Builds procéduraux</h3>
+        <p>Temples, villes, maps, donjons. L'IA écrit le script qui génère la construction dans le Workspace, rangée dans un Model propre.</p>
+      </article>
+      <article class="fcard reveal">
+        <span class="ficon">⚙️</span>
+        <h3>Scripts Luau</h3>
+        <p>Combat, inventaire, économie, sauvegarde de données, anti-triche. Code autonome, commenté en français, prêt à insérer.</p>
+      </article>
+      <article class="fcard reveal">
+        <span class="ficon">🖥️</span>
+        <h3>GUI modernes</h3>
+        <p>Menus, HUD, shops, tableaux de bord. Design soigné avec UICorner, UIStroke et transitions TweenService.</p>
+      </article>
+      <article class="fcard reveal">
+        <span class="ficon">🎞️</span>
+        <h3>Animations</h3>
+        <p>Animations procédurales ou par keyframes : attaques, démarches, cutscenes, effets d'apparition.</p>
+      </article>
+      <article class="fcard fcard-wide reveal">
+        <span class="ficon">⚡</span>
+        <h3>Directement dans Studio</h3>
+        <p>
+          L'IA renvoie un bloc <code>lua</code> avec un bouton <b>Insérer</b>. Un clic, et le script
+          apparaît dans ton Explorer — au bon endroit, sélectionné et ouvert dans l'éditeur.
+          Pas de copier-coller sauvage, pas d'erreur de parent.
+        </p>
+        <div class="tags">
+          <span>ServerScriptService</span><span>StarterGui</span><span>Workspace</span><span>Sélection active</span>
+        </div>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ============================= install ============================= -->
+<section id="install" class="section">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <span class="kicker">Étape 1</span>
+      <h2>Installer le plugin</h2>
+      <p>Une seule fois, 30 secondes. Ensuite il s'ouvre avec Roblox Studio.</p>
+    </div>
+
+    <div class="steps">
+      <div class="step reveal">
+        <span class="step-num">1</span>
+        <h3>Télécharger</h3>
+        <p>Récupère le fichier <code>XozHubAI.rbxmx</code>.</p>
+        <a class="btn btn-primary btn-block" href="/download/XozHubAI.rbxmx" data-download="rbxmx" download>
+          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M12 3v12m0 0l-4.5-4.5M12 15l4.5-4.5M4 20h16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          XozHubAI.rbxmx
+        </a>
+      </div>
+      <div class="step reveal">
+        <span class="step-num">2</span>
+        <h3>Importer dans Studio</h3>
+        <p>Ouvre Roblox Studio, puis dans l'<b>Explorer</b> : clic droit → <b>Insert from File…</b> → choisis le fichier.</p>
+      </div>
+      <div class="step reveal">
+        <span class="step-num">3</span>
+        <h3>Enregistrer comme plugin</h3>
+        <p>Clic droit sur le script <code>XozHubAI</code> → <b>Save as Local Plugin</b>. Un bouton <b>XozHub AI</b> apparaît dans la barre d'outils.</p>
+      </div>
+    </div>
+
+    <details class="faq reveal">
+      <summary>Méthode manuelle (copier le code source)</summary>
+      <p>
+        Crée un <code>Script</code> dans Studio, colle le contenu de
+        <a href="/download/XozHubAI.plugin.lua" data-download="lua" target="_blank" rel="noopener">XozHubAI.plugin.lua</a>,
+        puis clic droit → <b>Save as Local Plugin</b>.
+      </p>
+    </details>
+
+    <details class="faq reveal">
+      <summary>Le bouton n'apparaît pas dans Studio</summary>
+      <p>
+        Va dans <b>Plugins</b> → <b>Manage Plugins</b> et vérifie que <b>XozHub AI</b> est activé.
+        En cas de doute, relance Roblox Studio.
+      </p>
+    </details>
+  </div>
+</section>
+
+<!-- ============================= connect ============================= -->
+<section id="connect" class="section">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <span class="kicker">Étape 2</span>
+      <h2>Connecter le plugin au site</h2>
+      <p>Le site affiche un code. Tu le tapes une fois dans le plugin. C'est lié.</p>
+    </div>
+
+    <div class="connect">
+      <div class="pair reveal">
+        <header class="pair-head">
+          <h3>Code d'appairage</h3>
+          <span class="chip chip-idle" id="chip-pair"><i></i><span>En attente</span></span>
+        </header>
+
+        <div class="code-slots" id="code-slots" data-empty="true">
+          <!-- rempli par app.js -->
+        </div>
+
+        <p class="pair-help" id="pair-help">
+          Clique sur le bouton : un code apparaît ici. Ouvre le plugin dans Roblox Studio,
+          colle-le dans le champ <b>Code</b> et valide.
+        </p>
+
+        <div class="pair-actions">
+          <button class="btn btn-primary btn-block" id="btn-connect">
+            <span class="btn-label">Générer le code</span>
+          </button>
+          <button class="btn btn-ghost btn-block" id="btn-copy" hidden>Copier le code</button>
+        </div>
+
+        <div class="field">
+          <label for="server-url">Adresse à mettre dans le plugin</label>
+          <div class="field-row">
+            <input id="server-url" type="text" value="http://localhost:8787" spellcheck="false" />
+            <button class="btn btn-ghost btn-sm" id="btn-copy-url" type="button">Copier</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="how reveal">
+        <h3>Le flux, en clair</h3>
+        <ol class="timeline">
+          <li>
+            <b>Le site fabrique un code</b>
+            <span>6 caractères, unique, lié à ta session.</span>
+          </li>
+          <li>
+            <b>Le plugin envoie ce code</b>
+            <span>Le serveur reconnaît la session et appaire les deux côtés.</span>
+          </li>
+          <li>
+            <b>Tu discutes d'un côté ou de l'autre</b>
+            <span>Le site et le panneau Studio partagent la même conversation.</span>
+          </li>
+          <li>
+            <b>L'IA renvoie du code</b>
+            <span>Bouton « Insérer » dans le plugin → c'est dans ton jeu.</span>
+          </li>
+        </ol>
+        <div class="callout">
+          Tout tourne sur ta machine. Le site, le serveur et le plugin communiquent en local.
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- =============================== chat ============================== -->
+<section id="chat" class="section">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <span class="kicker">Étape 3</span>
+      <h2>Parler à l'IA</h2>
+      <p>Décris ce que tu veux. Sois précis sur le style, l'IA fait le reste.</p>
+    </div>
+
+    <div class="chat reveal">
+      <header class="chat-head">
+        <span class="chat-avatar">X</span>
+        <div class="chat-who">
+          <b>XozHub AI</b>
+          <span id="chat-sub">Assistant Roblox Studio</span>
+        </div>
+        <span class="chip chip-idle" id="chip-chat"><i></i><span>Plugin hors ligne</span></span>
+      </header>
+
+      <div class="chat-log" id="chat-log">
+        <div class="msg msg-ai">
+          <span class="msg-avatar">X</span>
+          <div class="bubble">
+            <p>Salut 👋 Dis-moi ce que tu veux construire.</p>
+            <p class="dim">Exemple : « une GUI de shop animée avec un thème sombre ».</p>
+          </div>
+        </div>
+        <div class="msg msg-ai">
+          <span class="msg-avatar">X</span>
+          <div class="bubble">
+            <p>Je sais aussi faire du terrain, des villes entières, des systèmes de combat, de l'inventaire, des animations d'attaque…</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="chat-quick" id="chat-quick">
+        <button data-prompt="Fais-moi une GUI de shop moderne, animée, avec un thème sombre.">🖥️ GUI de shop</button>
+        <button data-prompt="Construis un temple futuriste dans le Workspace, bien organisé dans un Model.">🏗️ Temple futuriste</button>
+        <button data-prompt="Crée un système de combat complet avec dégâts, cooldown et effets.">⚔️ Combat</button>
+        <button data-prompt="Fais une animation d'attaque au corps à corps pour tous les joueurs.">🎞️ Animation</button>
+      </div>
+
+      <form class="chat-input" id="chat-form" autocomplete="off">
+        <input id="chat-text" type="text" placeholder="Décris ton build, ton script, ta GUI…" />
+        <button class="btn btn-primary" type="submit" id="chat-send">
+          Envoyer
+          <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path d="M4 12l16-8-6 8 6 8-16-8z" fill="currentColor"/></svg>
+        </button>
+      </form>
+    </div>
+  </div>
+</section>
+
+<!-- ================================ fin ============================== -->
+<section class="finale">
+  <div class="wrap">
+    <h2>Prêt à construire ton jeu ?</h2>
+    <p>Installe le plugin, connecte-le, et lance ta première idée.</p>
+    <a class="btn btn-primary btn-lg" href="/download/XozHubAI.rbxmx" data-download="rbxmx" download>Télécharger XozHubAI.rbxmx</a>
+  </div>
+</section>
+
+</main>
+
+<footer class="footer">
+  <div class="wrap footer-in">
+    <span>XozHub AI · plugin Roblox Studio + site d'appairage</span>
+    <span class="mono" id="footer-info">—</span>
+  </div>
+</footer>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
